@@ -7,7 +7,7 @@ from scipher.core.document_processor import DocumentProcessor
 from scipher.utils.file_utils import FileManager
 from scipher.models.database import Document
 from scipher.models.schemas import DocumentResponse, ProcessingStatus
-from scipher.core.exceptions import DatabaseException
+from scipher.core.exceptions import DatabaseException, ValidationException
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -28,6 +28,10 @@ async def upload_document(
     
     Returns document metadata with processing status
     """
+    
+    # Check if filename exists
+    if not file.filename:
+        raise ValidationException("No filename provided")
     
     # Validate file extension
     file_ext = validator.validate_file_extension(file.filename)

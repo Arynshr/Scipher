@@ -30,9 +30,21 @@ class Settings(BaseSettings):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.UPLOAD_DIR.mkdir(exist_ok=True)
-        self.PROCESSED_DATA_DIR.mkdir(exist_ok=True)
-        self.TEMP_DIR.mkdir(exist_ok=True)
+        # Validate critical settings
+        if self.MAX_FILE_SIZE <= 0:
+            raise ValueError("MAX_FILE_SIZE must be positive")
+        if not self.ALLOWED_EXTENSIONS:
+            raise ValueError("ALLOWED_EXTENSIONS cannot be empty")
+        if self.PORT <= 0 or self.PORT > 65535:
+            raise ValueError("PORT must be between 1 and 65535")
+        
+        # Create directories
+        try:
+            self.UPLOAD_DIR.mkdir(exist_ok=True)
+            self.PROCESSED_DATA_DIR.mkdir(exist_ok=True)
+            self.TEMP_DIR.mkdir(exist_ok=True)
+        except Exception as e:
+            raise ValueError(f"Failed to create required directories: {e}")
 
 
 settings = Settings()

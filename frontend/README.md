@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Scipher Frontend
 
-## Getting Started
+A Next.js frontend application for the Scipher research paper simplification tool. This application allows users to upload PDF research papers and view parsed content with images extracted using Docling.
 
-First, run the development server:
+## Features
 
+- **PDF Upload**: Drag and drop or click to upload PDF files (max 50MB)
+- **Real-time Processing Status**: Live updates on document processing status
+- **Document Viewer**: View parsed content in multiple formats:
+  - Overview with document metadata
+  - Structured sections with content
+  - Full text view
+- **Image Display**: View extracted images from documents
+- **Responsive Design**: Works on desktop and mobile devices
+
+## Prerequisites
+
+- Node.js 18+ 
+- npm or yarn
+- Running Scipher backend server (FastAPI)
+
+## Installation
+
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Set up environment variables (optional):
+Create a `.env.local` file in the root directory:
+```env
+# Backend API URL - change this if your backend runs on a different port
+NEXT_PUBLIC_API_URL=http://localhost:8080
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Start the development server:
+```bash
+npm run dev
+```
 
-## Learn More
+2. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-To learn more about Next.js, take a look at the following resources:
+## Backend Integration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The frontend connects to the FastAPI backend with the following endpoints:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `POST /api/upload` - Upload PDF files
+- `GET /api/status/{doc_id}` - Check processing status
+- `GET /api/document/{doc_id}` - Get parsed document content
+- `GET /api/document/{doc_id}/sections` - Get document sections
+- `GET /api/document/{doc_id}/text` - Get raw text content
+- `DELETE /api/document/{doc_id}` - Delete document
 
-## Deploy on Vercel
+## Usage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Upload Document**: 
+   - Drag and drop a PDF file or click "Choose File"
+   - Wait for upload confirmation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. **Processing**: 
+   - Monitor real-time processing status
+   - Processing typically takes 1-3 minutes depending on document size
+
+3. **View Results**:
+   - **Overview**: See document metadata and section summary
+   - **Sections**: Browse structured content by section type
+   - **Full Text**: View complete extracted text
+
+## File Structure
+
+```
+src/
+├── app/
+│   ├── components/
+│   │   ├── DocumentUploader.tsx    # File upload component
+│   │   ├── ProcessingStatus.tsx    # Status monitoring component
+│   │   └── DocumentViewer.tsx      # Document display component
+│   ├── lib/
+│   │   └── api.ts                  # API client and types
+│   ├── layout.tsx                  # Root layout
+│   └── page.tsx                    # Main page component
+```
+
+## Technologies Used
+
+- **Next.js 15** - React framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **React 19** - UI library
+
+## API Types
+
+The application uses TypeScript interfaces for type safety:
+
+- `DocumentResponse` - Upload response
+- `StatusResponse` - Processing status
+- `ProcessedContent` - Parsed document data
+- `SectionSchema` - Document section structure
+
+## Error Handling
+
+The application includes comprehensive error handling for:
+- File upload failures
+- Network connectivity issues
+- Processing errors
+- Invalid file formats
+- File size limits
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## License
+
+This project is part of the Scipher research paper simplification tool.
