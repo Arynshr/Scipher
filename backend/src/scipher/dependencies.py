@@ -1,10 +1,10 @@
 from typing import Generator
 from sqlalchemy.orm import Session
 
-from models.database import SessionLocal
-from core.document_processor import document_processor, DocumentProcessor
-from core.validator import validator, DocumentValidator
-from utils.file_utils import file_manager, FileManager
+from scipher.models.database import SessionLocal
+from scipher.core.document_processor import document_processor, DocumentProcessor
+from scipher.core.validator import validator, DocumentValidator
+from scipher.utils.file_utils import file_manager, FileManager
 
 
 def get_db() -> Generator[Session, None, None]:

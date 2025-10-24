@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
-
+from uuid import UUID
 
 class ProcessingStatus(str, Enum):
     """Document processing status"""
@@ -10,7 +10,7 @@ class ProcessingStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
-
+    PENDING = "pending"  # Added to match database default
 
 class JobType(str, Enum):
     """Processing job types"""
@@ -19,32 +19,30 @@ class JobType(str, Enum):
     GLOSSARY = "glossary"
     CLASSIFICATION = "classification"
 
-
 # Request Schemas
 class UploadRequest(BaseModel):
     """Document upload metadata"""
     description: Optional[str] = None
     tags: Optional[List[str]] = None
 
-
 # Response Schemas
 class DocumentResponse(BaseModel):
     """Standard document response"""
-    id: str
+    id: UUID
     filename: str
     original_filename: str
     upload_date: datetime
-    status: str
+    status: ProcessingStatus  # Use enum for validation
     error_message: Optional[str] = None
     file_size: int
     
     class Config:
         from_attributes = True
 
-
 class SectionSchema(BaseModel):
     """Document section"""
     id: Optional[int] = None
+    document_id: UUID  # Added to match database schema
     section_type: str
     content: str
     order: int = 0
@@ -52,23 +50,20 @@ class SectionSchema(BaseModel):
     class Config:
         from_attributes = True
 
-
 class ProcessedContent(BaseModel):
     """Complete processed document content"""
-    id: str
+    id: UUID
     filename: str
     text: str
-    sections: List[Dict[str, Any]]
+    sections: List[SectionSchema]  # Changed to List[SectionSchema]
     metadata: Dict[str, Any]
-
 
 class StatusResponse(BaseModel):
     """Processing status response"""
-    id: str
-    status: str
+    id: UUID
+    status: ProcessingStatus  # Use enum for validation
     message: str
     error_message: Optional[str] = None
-
 
 class DocumentListResponse(BaseModel):
     """Paginated document list"""
@@ -77,13 +72,11 @@ class DocumentListResponse(BaseModel):
     skip: int
     limit: int
 
-
 class ErrorResponse(BaseModel):
     """Standard error response"""
     error: str
     detail: str
     status_code: int
-
 
 class HealthResponse(BaseModel):
     """Health check response"""
@@ -92,19 +85,17 @@ class HealthResponse(BaseModel):
     database: str
     version: str
 
-
 class DeleteResponse(BaseModel):
     """Delete operation response"""
     message: str
-    id: str
-
+    id: UUID
 
 class ProcessingJobSchema(BaseModel):
     """Processing job details"""
     id: int
-    document_id: str
-    job_type: str
-    status: str
+    document_id: UUID
+    job_type: JobType  # Use enum for validation
+    status: ProcessingStatus  # Use enum for validation
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     error_message: Optional[str]

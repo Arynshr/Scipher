@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import select
+from typing import List, Optional
+from uuid import UUID
+import logging
 
-from scipher.dependencies import get_db, get_validator
-from scipher.core.validator import DocumentValidator
-from scipher.models.database import Document
-from scipher.models.schemas import StatusResponse, DocumentResponse, DocumentListResponse
+from scipher.dependencies import get_db
+from scipher.models.database import Document, ProcessingJob
+from scipher.models.schemas import StatusResponse, ProcessingJobSchema, ProcessingStatus
 from scipher.core.exceptions import DocumentNotFoundException
-from scipher.utils.response_utils import response_formatter
 
-router = APIRouter(prefix="/api", tags=["processing"])
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["processing"])
 
 
 @router.get("/status/{doc_id}", response_model=StatusResponse)
@@ -18,100 +20,132 @@ async def get_processing_status(
     db: Session = Depends(get_db)
 ):
     """
-    Get processing status of a specific document
+    Get processing status for a document
     
     - **doc_id**: Document ID
     
-    Returns current processing status and message
+    Returns current processing status and any error messages
     """
     
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+    # Convert string to UUID
+    try:
+        doc_uuid = UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+    
+    # Get document
+    doc = db.query(Document).filter(Document.id == doc_uuid).first()
     
     if not doc:
         raise DocumentNotFoundException(doc_id)
     
-    # Get human-readable status message
-    message = response_formatter.status_message_mapper(doc.status)
+    # Determine status message
+    if doc.status == ProcessingStatus.COMPLETED.value:
+        message = "Document processing completed successfully"
+    elif doc.status == ProcessingStatus.PROCESSING.value:
+        message = "Document is currently being processed"
+    elif doc.status == ProcessingStatus.FAILED.value:
+        message = f"Document processing failed: {doc.error_message or 'Unknown error'}"
+    elif doc.status == ProcessingStatus.UPLOADED.value:
+        message = "Document uploaded and queued for processing"
+    else:
+        message = f"Document status: {doc.status}"
     
     return StatusResponse(
-        id=doc.id,
-        status=doc.status,
+        id=doc_uuid,
+        status=ProcessingStatus(doc.status),
         message=message,
         error_message=doc.error_message
     )
 
 
-@router.get("/documents", response_model=DocumentListResponse)
-async def list_documents(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(10, ge=1, le=100, description="Maximum records to return"),
-    status: str = Query(None, description="Filter by status"),
-    db: Session = Depends(get_db),
-    validator: DocumentValidator = Depends(get_validator)
+@router.get("/jobs/{doc_id}", response_model=List[ProcessingJobSchema])
+async def get_processing_jobs(
+    doc_id: str,
+    db: Session = Depends(get_db)
 ):
     """
-    List all uploaded documents with pagination
+    Get processing jobs for a document
     
-    - **skip**: Offset for pagination (default: 0)
-    - **limit**: Max results per page (default: 10, max: 100)
-    - **status**: Filter by processing status (optional)
+    - **doc_id**: Document ID
     
-    Returns paginated list of documents
+    Returns list of processing jobs with their status
     """
     
-    # Validate pagination parameters
-    skip, limit = validator.validate_pagination(skip, limit)
+    # Convert string to UUID
+    try:
+        doc_uuid = UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+    
+    # Get document
+    doc = db.query(Document).filter(Document.id == doc_uuid).first()
+    
+    if not doc:
+        raise DocumentNotFoundException(doc_id)
+    
+    # Get processing jobs
+    jobs = db.query(ProcessingJob).filter(ProcessingJob.document_id == doc_uuid).all()
+    
+    return [
+        ProcessingJobSchema(
+            id=job.id,
+            document_id=job.document_id,
+            job_type=job.job_type,
+            status=job.status,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error_message=job.error_message
+        )
+        for job in jobs
+    ]
+
+
+@router.get("/documents", response_model=List[StatusResponse])
+async def list_documents_status(
+    skip: int = Query(0, ge=0, description="Number of documents to skip"),
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of documents to return"),
+    status: Optional[ProcessingStatus] = Query(None, description="Filter by processing status"),
+    db: Session = Depends(get_db)
+):
+    """
+    List documents with their processing status
+    
+    - **skip**: Number of documents to skip (pagination)
+    - **limit**: Maximum number of documents to return (1-100)
+    - **status**: Optional filter by processing status
+    
+    Returns list of documents with their current status
+    """
     
     # Build query
     query = db.query(Document)
     
-    # Apply status filter if provided
     if status:
-        query = query.filter(Document.status == status)
+        query = query.filter(Document.status == status.value)
     
-    # Get total count
-    total = query.count()
+    # Apply pagination
+    documents = query.offset(skip).limit(limit).all()
     
-    # Get paginated results
-    documents = query.order_by(Document.upload_date.desc())\
-        .offset(skip)\
-        .limit(limit)\
-        .all()
+    # Convert to StatusResponse
+    results = []
+    for doc in documents:
+        if doc.status == ProcessingStatus.COMPLETED.value:
+            message = "Document processing completed successfully"
+        elif doc.status == ProcessingStatus.PROCESSING.value:
+            message = "Document is currently being processed"
+        elif doc.status == ProcessingStatus.FAILED.value:
+            message = f"Document processing failed: {doc.error_message or 'Unknown error'}"
+        elif doc.status == ProcessingStatus.UPLOADED.value:
+            message = "Document uploaded and queued for processing"
+        else:
+            message = f"Document status: {doc.status}"
+        
+        results.append(StatusResponse(
+            id=doc.id,
+            status=ProcessingStatus(doc.status),
+            message=message,
+            error_message=doc.error_message
+        ))
     
-    return DocumentListResponse(
-        documents=documents,
-        total=total,
-        skip=skip,
-        limit=limit
-    )
-
-
-@router.get("/documents/stats")
-async def get_document_statistics(
-    db: Session = Depends(get_db)
-):
-    """
-    Get statistics about documents
-    
-    Returns counts by status and total size
-    """
-    from sqlalchemy import func
-    from scipher.models.schemas import ProcessingStatus
-    
-    # Count by status
-    status_counts = {}
-    for status in ProcessingStatus:
-        count = db.query(Document).filter(Document.status == status.value).count()
-        status_counts[status.value] = count
-    
-    # Total documents
-    total_documents = db.query(Document).count()
-    
-    # Total file size
-    total_size = db.query(func.sum(Document.file_size)).scalar() or 0
-    
-    return {
-        "total_documents": total_documents,
-        "status_counts": status_counts,
-        "total_size_mb": round(total_size / (1024 * 1024), 2)
-    }
+    return results

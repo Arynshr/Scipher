@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8080
     
-    DATABASE_URL: str = "sqlite:///./scipher.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./scipher.db"
     DB_ECHO: bool = False
     
     UPLOAD_DIR: Path = Path("uploads")

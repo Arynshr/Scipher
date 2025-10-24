@@ -6,7 +6,7 @@ import time
 import logging
 from typing import Callable
 
-from core.exceptions import ScipherBaseException
+from scipher.core.exceptions import ScipherBaseException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

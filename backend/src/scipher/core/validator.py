@@ -3,14 +3,14 @@ from typing import Set
 import re
 from fastapi import UploadFile
 
-from config import settings
-from core.exceptions import (
+from scipher.config import settings
+from scipher.core.exceptions import (
     ValidationException,
     FileSizeExceededException,
     UnsupportedFileTypeException,
     DocumentNotReadyException
 )
-from models.schemas import ProcessingStatus
+from scipher.models.schemas import ProcessingStatus
 
 
 class DocumentValidator:

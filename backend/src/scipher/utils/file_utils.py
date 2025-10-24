@@ -4,8 +4,8 @@ import uuid
 from typing import Optional
 from fastapi import UploadFile
 
-from config import settings
-from core.exceptions import FileOperationException
+from scipher.config import settings
+from scipher.core.exceptions import FileOperationException
 
 
 class FileManager:
