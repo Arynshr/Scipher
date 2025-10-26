@@ -9,8 +9,7 @@ from scipher.models.database import Document
 from scipher.models.schemas import DocumentResponse, ProcessingStatus
 from scipher.core.exceptions import DatabaseException, ValidationException
 
-router = APIRouter(prefix="/api", tags=["upload"])
-
+router = APIRouter(tags=["upload"])
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(

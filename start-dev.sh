@@ -8,7 +8,7 @@ echo "=========================================="
 
 # Check if we're in the right directory
 if [ ! -d "backend" ] || [ ! -d "frontend" ]; then
-    echo "❌ Error: Please run this script from the scipher project root directory"
+    echo " Error: Please run this script from the scipher project root directory"
     exit 1
 fi
 
@@ -24,12 +24,12 @@ start_backend() {
     PYTHONPATH=src uvicorn main:app --reload --host 0.0.0.0 --port 8080 &
     BACKEND_PID=$!
     cd ..
-    echo "✅ Backend started with PID: $BACKEND_PID"
+    echo " Backend started with PID: $BACKEND_PID"
 }
 
 # Function to start frontend
 start_frontend() {
-    echo "🎨 Starting Next.js Frontend..."
+    echo " Starting Next.js Frontend..."
     cd frontend
     echo "Installing Node.js dependencies..."
     npm install
@@ -37,20 +37,20 @@ start_frontend() {
     npm run dev &
     FRONTEND_PID=$!
     cd ..
-    echo "✅ Frontend started with PID: $FRONTEND_PID"
+    echo " Frontend started with PID: $FRONTEND_PID"
 }
 
 # Function to cleanup on exit
 cleanup() {
     echo ""
-    echo "🛑 Shutting down servers..."
+    echo " Shutting down servers..."
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null
-        echo "✅ Backend stopped"
+        echo " Backend stopped"
     fi
     if [ ! -z "$FRONTEND_PID" ]; then
         kill $FRONTEND_PID 2>/dev/null
-        echo "✅ Frontend stopped"
+        echo " Frontend stopped"
     fi
     exit 0
 }
@@ -64,11 +64,11 @@ sleep 3  # Give backend time to start
 start_frontend
 
 echo ""
-echo "🎉 Scipher is now running!"
+echo " Scipher is now running!"
 echo "========================="
-echo "📡 Backend API: http://localhost:8080"
-echo "📚 API Docs: http://localhost:8080/docs"
-echo "🎨 Frontend: http://localhost:3000"
+echo " Backend API: http://localhost:8080"
+echo " API Docs: http://localhost:8080/docs"
+echo " Frontend: http://localhost:3000"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 
