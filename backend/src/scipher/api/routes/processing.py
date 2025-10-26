@@ -34,7 +34,7 @@ async def get_processing_status(
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
     # Get document
-    doc = db.query(Document).filter(Document.id == doc_uuid).first()
+    doc = db.query(Document).filter(Document.id == str(doc_uuid)).first()
     
     if not doc:
         raise DocumentNotFoundException(doc_id)
@@ -79,13 +79,13 @@ async def get_processing_jobs(
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
     # Get document
-    doc = db.query(Document).filter(Document.id == doc_uuid).first()
+    doc = db.query(Document).filter(Document.id == str(doc_uuid)).first()
     
     if not doc:
         raise DocumentNotFoundException(doc_id)
     
     # Get processing jobs
-    jobs = db.query(ProcessingJob).filter(ProcessingJob.document_id == doc_uuid).all()
+    jobs = db.query(ProcessingJob).filter(ProcessingJob.document_id == str(doc_uuid)).all()
     
     return [
         ProcessingJobSchema(
