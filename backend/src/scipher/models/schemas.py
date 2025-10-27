@@ -1,48 +1,38 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 from enum import Enum
 from uuid import UUID
+from typing import List, Optional, Dict, Any
 
 class ProcessingStatus(str, Enum):
-    """Document processing status"""
     UPLOADED = "uploaded"
     PROCESSING = "processing"
+    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    PENDING = "pending"  # Added to match database default
 
 class JobType(str, Enum):
-    """Processing job types"""
     EXTRACTION = "extraction"
-    SUMMARIZATION = "summarization"
-    GLOSSARY = "glossary"
-    CLASSIFICATION = "classification"
 
-# Request Schemas
-class UploadRequest(BaseModel):
-    """Document upload metadata"""
-    description: Optional[str] = None
-    tags: Optional[List[str]] = None
+class ErrorResponse(BaseModel):
+    success: bool = False
+    error: str
+    detail: str
 
-# Response Schemas
-class DocumentResponse(BaseModel):
-    """Standard document response"""
+class HealthResponse(BaseModel):
+    status: str
+    timestamp: datetime
+    database: str
+    version: str
+
+class DeleteResponse(BaseModel):
+    message: str
     id: UUID
-    filename: str
-    original_filename: str
-    upload_date: datetime
-    status: ProcessingStatus  # Use enum for validation
-    error_message: Optional[str] = None
-    file_size: int
-    
-    class Config:
-        from_attributes = True
 
 class SectionSchema(BaseModel):
-    """Document section"""
     id: Optional[int] = None
-    document_id: UUID  # Added to match database schema
+    document_id: UUID
     section_type: str
     content: str
     order: int = 0
@@ -50,55 +40,46 @@ class SectionSchema(BaseModel):
     class Config:
         from_attributes = True
 
-class ProcessedContent(BaseModel):
-    """Complete processed document content"""
-    id: UUID
-    filename: str
-    text: str
-    sections: List[SectionSchema]  # Changed to List[SectionSchema]
-    metadata: Dict[str, Any]
-
-class StatusResponse(BaseModel):
-    """Processing status response"""
-    id: UUID
-    status: ProcessingStatus  # Use enum for validation
-    message: str
-    error_message: Optional[str] = None
-
-class DocumentListResponse(BaseModel):
-    """Paginated document list"""
-    documents: List[DocumentResponse]
-    total: int
-    skip: int
-    limit: int
-
-class ErrorResponse(BaseModel):
-    """Standard error response"""
-    error: str
-    detail: str
-    status_code: int
-
-class HealthResponse(BaseModel):
-    """Health check response"""
-    status: str
-    timestamp: datetime
-    database: str
-    version: str
-
-class DeleteResponse(BaseModel):
-    """Delete operation response"""
-    message: str
-    id: UUID
-
 class ProcessingJobSchema(BaseModel):
-    """Processing job details"""
     id: int
     document_id: UUID
-    job_type: JobType  # Use enum for validation
-    status: ProcessingStatus  # Use enum for validation
+    job_type: JobType
+    status: ProcessingStatus
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     error_message: Optional[str]
     
     class Config:
         from_attributes = True
+
+class ProcessedContent(BaseModel):
+    id: UUID
+    filename: str  # Sanitized filename
+    original_filename: str  # Original filename
+    text: str
+    sections: List[SectionSchema]
+    metadata: Dict[str, Any]
+
+class StatusResponse(BaseModel):
+    id: UUID
+    status: ProcessingStatus
+    message: str
+    error_message: Optional[str] = None
+
+class DocumentResponse(BaseModel):
+    id: UUID
+    filename: str  # Sanitized filename
+    original_filename: str  # Original filename
+    upload_date: datetime
+    status: ProcessingStatus
+    error_message: Optional[str] = None
+    file_size: int
+    
+    class Config:
+        from_attributes = True
+
+class DocumentListResponse(BaseModel):
+    documents: List[DocumentResponse]
+    total: int
+    skip: int
+    limit: int

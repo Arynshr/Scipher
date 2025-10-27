@@ -6,20 +6,30 @@ import logging
 import json
 from uuid import UUID
 
-from scipher.models.database import get_async_session, Document, Section
+from scipher.dependencies import get_db, get_document_processor
+from scipher.models.database import Document, Section
 from scipher.models.schemas import ProcessedContent, DeleteResponse, SectionSchema, ProcessingStatus
-from scipher.core.document_processor import document_processor
+from scipher.core.document_processor import DocumentProcessor
+from scipher.core.exceptions import DocumentNotFoundException
 from scipher.config import settings
+from pydantic import BaseModel
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["content"])
 
+# New Pydantic model for get_document_text response
+class TextResponse(BaseModel):
+    id: UUID
+    filename: str
+    text: str
+    status: ProcessingStatus
 
 @router.get("/document/{doc_id}", response_model=ProcessedContent)
 async def get_document_content(
     doc_id: str,
-    db: AsyncSession = Depends(get_async_session)
+    db: AsyncSession = Depends(get_db),
+    processor: DocumentProcessor = Depends(get_document_processor)
 ):
     """
     Retrieve processed document content
@@ -28,21 +38,16 @@ async def get_document_content(
     
     Returns extracted text, sections, and metadata
     """
-    
-    # Convert string to UUID
     try:
         doc_uuid = UUID(doc_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
-    # Get document
-    result = await db.execute(
-        select(Document).where(Document.id == doc_uuid)
-    )
-    doc = result.scalar_one_or_none()
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
     
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        raise DocumentNotFoundException(doc_id)
     
     if doc.status != ProcessingStatus.COMPLETED.value:
         raise HTTPException(
@@ -50,56 +55,22 @@ async def get_document_content(
             detail=f"Document not ready. Current status: {doc.status}"
         )
     
-    # Get sections from database
-    sections_result = await db.execute(
-        select(Section)
-        .where(Section.document_id == doc_uuid)
-        .order_by(Section.order)
-    )
-    sections = sections_result.scalars().all()
-    
-    # Convert to SectionSchema objects
-    sections_data = [
-        SectionSchema(
-            id=section.id,
-            document_id=str(section.document_id),
-            section_type=section.section_type,
-            content=section.content,
-            order=section.order
-        )
-        for section in sections
-    ]
-    
-    # Parse metadata JSON if exists
-    metadata_dict = {}
-    if doc.metadata_json:
-        try:
-            metadata_dict = json.loads(doc.metadata_json)
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse metadata JSON for document {doc_id}")
-    
-    # Load processed data if available
-    processed_data = document_processor.load_processed_data(doc_id)
+    sections_stmt = select(Section).filter_by(document_id=str(doc_uuid)).order_by(Section.order)
+    sections = (await db.scalars(sections_stmt)).all()
     
     return ProcessedContent(
-        id=str(doc.id),  # Convert UUID to string
+        id=doc.id,
         filename=doc.original_filename,
-        text=doc.extracted_text or "No text extracted",
-        sections=sections_data,
-        metadata={
-            "upload_date": doc.upload_date.isoformat(),
-            "file_size": doc.file_size,
-            **metadata_dict,
-            **(processed_data.get("metadata", {}) if processed_data else {})
-        }
+        text=doc.extracted_text or "",
+        sections=[SectionSchema.from_orm(section) for section in sections],
+        metadata=json.loads(doc.metadata_json) if doc.metadata_json else {}
     )
-
 
 @router.get("/document/{doc_id}/sections", response_model=List[SectionSchema])
 async def get_document_sections(
     doc_id: str,
     section_type: Optional[str] = None,
-    db: AsyncSession = Depends(get_async_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Retrieve document sections
@@ -109,50 +80,32 @@ async def get_document_sections(
     
     Returns list of document sections
     """
-    
-    # Convert string to UUID
     try:
         doc_uuid = UUID(doc_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
     # Check if document exists
-    result = await db.execute(
-        select(Document).where(Document.id == doc_uuid)
-    )
-    doc = result.scalar_one_or_none()
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
     
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        raise DocumentNotFoundException(doc_id)
     
     # Build query
-    query = select(Section).where(Section.document_id == doc_uuid)
-    
-    # Apply section type filter if provided
+    query = select(Section).filter_by(document_id=str(doc_uuid))
     if section_type:
-        query = query.where(Section.section_type == section_type)
+        query = query.filter_by(section_type=section_type)
     
     query = query.order_by(Section.order)
+    sections = (await db.scalars(query)).all()
     
-    sections_result = await db.execute(query)
-    sections = sections_result.scalars().all()
-    
-    return [
-        SectionSchema(
-            id=section.id,
-            document_id=str(section.document_id),
-            section_type=section.section_type,
-            content=section.content,
-            order=section.order
-        )
-        for section in sections
-    ]
+    return [SectionSchema.from_orm(section) for section in sections]
 
-
-@router.get("/document/{doc_id}/text")
+@router.get("/document/{doc_id}/text", response_model=TextResponse)
 async def get_document_text(
     doc_id: str,
-    db: AsyncSession = Depends(get_async_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Retrieve raw extracted text from document
@@ -161,20 +114,16 @@ async def get_document_text(
     
     Returns plain text content
     """
-    
-    # Convert string to UUID
     try:
         doc_uuid = UUID(doc_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
-    result = await db.execute(
-        select(Document).where(Document.id == doc_uuid)
-    )
-    doc = result.scalar_one_or_none()
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
     
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        raise DocumentNotFoundException(doc_id)
     
     if doc.status != ProcessingStatus.COMPLETED.value:
         raise HTTPException(
@@ -182,18 +131,17 @@ async def get_document_text(
             detail=f"Document not ready. Current status: {doc.status}"
         )
     
-    return {
-        "id": str(doc.id),
-        "filename": doc.original_filename,
-        "text": doc.extracted_text or "No text available",
-        "status": doc.status
-    }
-
+    return TextResponse(
+        id=doc.id,
+        filename=doc.original_filename,
+        text=doc.extracted_text or "No text available",
+        status=ProcessingStatus(doc.status)
+    )
 
 @router.delete("/document/{doc_id}", response_model=DeleteResponse)
 async def delete_document(
     doc_id: str,
-    db: AsyncSession = Depends(get_async_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Delete a document and all associated data
@@ -202,20 +150,16 @@ async def delete_document(
     
     Deletes document, files, sections, and processing jobs
     """
-    
-    # Convert string to UUID
     try:
         doc_uuid = UUID(doc_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid document ID format")
     
-    result = await db.execute(
-        select(Document).where(Document.id == doc_uuid)
-    )
-    doc = result.scalar_one_or_none()
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
     
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        raise DocumentNotFoundException(doc_id)
     
     # Delete physical file
     try:
@@ -252,5 +196,5 @@ async def delete_document(
     
     return DeleteResponse(
         message="Document deleted successfully",
-        id=doc_id  # Return as string (matches input)
+        id=doc_uuid  # Use UUID
     )
