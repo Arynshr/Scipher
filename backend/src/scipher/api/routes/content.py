@@ -60,10 +60,13 @@ async def get_document_content(
     
     return ProcessedContent(
         id=doc.id,
-        filename=doc.original_filename,
+        filename=doc.filename,
+        original_filename=doc.original_filename,
         text=doc.extracted_text or "",
         sections=[SectionSchema.from_orm(section) for section in sections],
-        metadata=json.loads(doc.metadata_json) if doc.metadata_json else {}
+        metadata=json.loads(doc.metadata_json) if doc.metadata_json else {},
+        file_size=doc.file_size,
+        upload_date=doc.upload_date
     )
 
 @router.get("/document/{doc_id}/sections", response_model=List[SectionSchema])

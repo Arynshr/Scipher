@@ -59,6 +59,8 @@ class ProcessedContent(BaseModel):
     text: str
     sections: List[SectionSchema]
     metadata: Dict[str, Any]
+    file_size: Optional[int] = None
+    upload_date: Optional[datetime] = None
 
 class StatusResponse(BaseModel):
     id: UUID

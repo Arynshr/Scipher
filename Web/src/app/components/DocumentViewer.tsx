@@ -48,18 +48,18 @@ export function DocumentViewer({ document, onNewUpload }: DocumentViewerProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Filename</p>
-                  <p className="text-gray-900 dark:text-white">{document?.filename || 'Unknown'}</p>
+                  <p className="text-gray-900 dark:text-white">{document?.original_filename || document?.filename || 'Unknown'}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">File Size</p>
                   <p className="text-gray-900 dark:text-white">
-                    {document.metadata?.file_size ? `${(document.metadata.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+                    {document.file_size ? `${(document.file_size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Upload Date</p>
                   <p className="text-gray-900 dark:text-white">
-                    {document.metadata?.upload_date ? new Date(document.metadata.upload_date).toLocaleDateString() : 'Unknown'}
+                    {document.upload_date ? new Date(document.upload_date).toLocaleDateString() : 'Unknown'}
                   </p>
                 </div>
                 <div>
@@ -175,7 +175,7 @@ export function DocumentViewer({ document, onNewUpload }: DocumentViewerProps) {
             Document Analysis Complete
           </h2>
           <p className="text-gray-600 dark:text-gray-300">
-            {document.filename}
+            {document.original_filename || document.filename}
           </p>
         </div>
         <button
