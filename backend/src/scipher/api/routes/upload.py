@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
 from scipher.dependencies import get_db, get_validator, get_file_manager, get_document_processor
 from scipher.core.validator import DocumentValidator
@@ -9,14 +10,13 @@ from scipher.models.database import Document
 from scipher.models.schemas import DocumentResponse, ProcessingStatus
 from scipher.core.exceptions import DatabaseException, ValidationException
 
-router = APIRouter(prefix="/api", tags=["upload"])
-
+router = APIRouter(tags=["upload"])
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     validator: DocumentValidator = Depends(get_validator),
     file_manager: FileManager = Depends(get_file_manager),
     processor: DocumentProcessor = Depends(get_document_processor)
@@ -38,6 +38,7 @@ async def upload_document(
     
     # Validate file size
     file_size = validator.validate_file_size(file)
+    await file.seek(0)  # Reset stream after validation
     
     # Sanitize filename
     safe_original_name = validator.sanitize_filename(file.filename)
@@ -52,27 +53,24 @@ async def upload_document(
     try:
         db_doc = Document(
             id=doc_id,
-            filename=safe_filename,
-            original_filename=safe_original_name,
+            filename=safe_filename,  # Sanitized filename
+            original_filename=safe_original_name,  # Original filename
             file_path=str(file_path),
             file_size=file_size,
-            status=ProcessingStatus.UPLOADED
+            status=ProcessingStatus.UPLOADED.value
         )
         
         db.add(db_doc)
-        db.commit()
-        db.refresh(db_doc)
+        await db.commit()
+        await db.refresh(db_doc)
     except Exception as e:
         # Cleanup file if database fails
         file_manager.delete_file(file_path)
         raise DatabaseException(f"Failed to create document record: {str(e)}")
     
-    # Queue background processing
+    # Queue background processing (wrap async to sync for BackgroundTasks)
     background_tasks.add_task(
-        processor.process_document,
-        doc_id,
-        str(file_path),
-        db
+        lambda: asyncio.run(processor.process_document(doc_id, str(file_path)))
     )
     
     return db_doc

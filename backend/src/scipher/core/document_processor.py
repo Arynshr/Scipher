@@ -5,17 +5,17 @@ from zoneinfo import ZoneInfo
 import json
 import asyncio
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from docling.document_converter import DocumentConverter
 
-from scipher.models.database import Document, Section, ProcessingJob
+from scipher.models.database import async_session, Document, Section, ProcessingJob
 from scipher.models.schemas import ProcessingStatus, JobType
 from scipher.core.exceptions import ProcessingException
 from scipher.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 class DocumentProcessor:
     """
@@ -28,81 +28,85 @@ class DocumentProcessor:
         self.processed_dir.mkdir(exist_ok=True)
         self.converter = DocumentConverter()
     
-    async def process_document(self, doc_id: str, file_path: str, db: Session):
+    async def process_document(self, doc_id: str, file_path: str):
         """
         Main processing pipeline for documents
         
         Args:
             doc_id: Document ID
             file_path: Path to uploaded file
-            db: Database session
         """
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc:
-            return
-        
-        job = None
-        
-        try:
-            # Update status
-            doc.status = ProcessingStatus.PROCESSING
-            db.commit()
+        async with async_session() as db:
+            job = None
             
-            # Create processing job
-            job = ProcessingJob(
-                document_id=doc_id,
-                job_type=JobType.EXTRACTION,
-                status="running",
-                started_at=datetime.now(ZoneInfo("UTC"))
-            )
-            db.add(job)
-            db.commit()
-            
-            logger.info(f"Starting Docling extraction for document {doc_id}")
-            
-            # Extract text using Docling
-            extracted_data = await self.extract_text(file_path)
-            
-            if not extracted_data or not extracted_data.get("text"):
-                raise ProcessingException("No text extracted from document")
-            
-            # Save extracted text
-            doc.extracted_text = extracted_data["text"]
-            doc.metadata_json = json.dumps(extracted_data["metadata"])
-            
-            # Parse and save sections
-            sections = await self.parse_sections(extracted_data)
-            for idx, section_data in enumerate(sections):
-                section = Section(
+            try:
+                # Get document (async query)
+                stmt = select(Document).filter_by(id=doc_id)
+                doc = (await db.scalars(stmt)).first()
+                if not doc:
+                    return
+                
+                # Update status
+                doc.status = ProcessingStatus.PROCESSING.value
+                await db.commit()
+                
+                # Create processing job
+                job = ProcessingJob(
                     document_id=doc_id,
-                    section_type=section_data["type"],
-                    content=section_data["content"],
-                    order=idx
+                    job_type=JobType.EXTRACTION.value,
+                    status=ProcessingStatus.RUNNING.value,  # Fixed to use ProcessingStatus
+                    started_at=datetime.now(ZoneInfo("UTC"))
                 )
-                db.add(section)
-            
-            # Save processed data to file
-            await self.save_processed_data(doc_id, extracted_data)
-            
-            # Update document status
-            doc.status = ProcessingStatus.COMPLETED
-            job.status = "completed"
-            job.completed_at = datetime.now(ZoneInfo("UTC"))
-            job.result_data = f"Extracted {len(extracted_data['text'])} characters"
-            
-            db.commit()
-            logger.info(f"Successfully processed document {doc_id}")
-            
-        except Exception as e:
-            logger.error(f"Processing failed for document {doc_id}: {str(e)}")
-            doc.status = ProcessingStatus.FAILED
-            doc.error_message = str(e)
-            if job:
-                job.status = "failed"
-                job.error_message = str(e)
+                db.add(job)
+                await db.commit()
+                
+                logger.info(f"Starting Docling extraction for document {doc_id}")
+                
+                # Extract text using Docling
+                extracted_data = await self.extract_text(file_path)
+                
+                if not extracted_data or not extracted_data.get("text"):
+                    raise ProcessingException("No text extracted from document")
+                
+                # Save extracted text
+                doc.extracted_text = extracted_data["text"]
+                doc.metadata_json = json.dumps(extracted_data["metadata"])
+                
+                # Parse and save sections
+                sections = self.parse_sections(extracted_data)
+                extracted_data["sections"] = sections  # Add sections to extracted_data
+                for idx, section_data in enumerate(sections):
+                    section = Section(
+                        document_id=doc_id,
+                        section_type=section_data["type"],
+                        content=section_data["content"],
+                        order=idx
+                    )
+                    db.add(section)
+                
+                # Save processed data to file
+                await self.save_processed_data(doc_id, extracted_data)
+                
+                # Update document status
+                doc.status = ProcessingStatus.COMPLETED.value
+                job.status = ProcessingStatus.COMPLETED.value
                 job.completed_at = datetime.now(ZoneInfo("UTC"))
-            db.commit()
-            raise ProcessingException(str(e))
+                job.result_data = f"Extracted {len(extracted_data['text'])} characters"
+                
+                await db.commit()
+                logger.info(f"Successfully processed document {doc_id}")
+                
+            except Exception as e:
+                logger.error(f"Processing failed for document {doc_id}: {str(e)}")
+                if doc:
+                    doc.status = ProcessingStatus.FAILED.value
+                    doc.error_message = str(e)
+                if job:
+                    job.status = ProcessingStatus.FAILED.value
+                    job.error_message = str(e)
+                    job.completed_at = datetime.now(ZoneInfo("UTC"))
+                await db.commit()
+                raise ProcessingException(str(e))
     
     async def extract_text(self, file_path: str) -> Dict[str, Any]:
         """
@@ -138,7 +142,7 @@ class DocumentProcessor:
             
             # Get document metadata
             metadata = {
-                "pages": getattr(result.document, 'num_pages', 0),
+                "pages": result.document.num_pages(),
                 "file_size": pdf_path.stat().st_size,
                 "extraction_date": datetime.now(ZoneInfo("UTC")).isoformat(),
                 "converter": "docling",
@@ -161,7 +165,7 @@ class DocumentProcessor:
         """Synchronous PDF conversion helper for executor"""
         return self.converter.convert(file_path)
     
-    async def parse_sections(self, extracted_data: Dict[str, Any]) -> List[Dict[str, str]]:
+    def parse_sections(self, extracted_data: Dict[str, Any]) -> List[Dict[str, str]]:
         """
         Parse document into logical sections
         
@@ -186,7 +190,7 @@ class DocumentProcessor:
                     sections.append(current_section)
                 current_section = {
                     "type": "title",
-                    "content": line_stripped[2:]
+                    "content": line_stripped[2:] + "\n"
                 }
             elif line_stripped.startswith('## '):
                 if current_section["content"]:
@@ -258,7 +262,6 @@ class DocumentProcessor:
                 return json.load(f)
         except Exception as e:
             raise ProcessingException(f"Failed to load processed data: {str(e)}")
-
 
 # Singleton instance
 document_processor = DocumentProcessor()

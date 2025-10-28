@@ -1,5 +1,5 @@
 """Database models and schemas package"""
-from .database import Base, Document, Section, ProcessingJob, get_db, init_db
+from .database import Base, Document, Section, ProcessingJob, init_db
 from .schemas import (
     ProcessingStatus,
     JobType,
@@ -19,7 +19,6 @@ __all__ = [
     "Document",
     "Section",
     "ProcessingJob",
-    "get_db",
     "init_db",
     "ProcessingStatus",
     "JobType",
