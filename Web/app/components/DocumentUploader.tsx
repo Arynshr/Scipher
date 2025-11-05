@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { apiClient, type DocumentResponse } from "../lib/api";
 
 interface DocumentUploaderProps {
-  onUploadSuccess: (document: any) => void;
+  onUploadSuccess: (document: DocumentResponse) => void;
 }
 
 export function DocumentUploader({ onUploadSuccess }: DocumentUploaderProps) {
@@ -72,27 +73,7 @@ export function DocumentUploader({ onUploadSuccess }: DocumentUploaderProps) {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('http://localhost:8080/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        let errorMessage = 'Upload failed';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.detail || errorMessage;
-        } catch {
-          // If response is not JSON, use status text
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
+      const result = await apiClient.uploadDocument(file);
       onUploadSuccess(result);
     } catch (err) {
       if (err instanceof TypeError && err.message.includes('fetch')) {
