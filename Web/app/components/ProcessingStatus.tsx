@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiClient, type DocumentResponse, type ProcessedContent } from "../lib/api";
 
 interface ProcessingStatusProps {
-  document: any;
+  document: DocumentResponse;
   status: string;
   onStatusUpdate: (status: string) => void;
-  onProcessingComplete: (content: any) => void;
+  onProcessingComplete: (content: ProcessedContent) => void;
 }
 
 export function ProcessingStatus({ 
@@ -27,27 +28,16 @@ export function ProcessingStatus({
     if (isMounted && (currentStatus === 'uploaded' || currentStatus === 'processing')) {
       const interval = setInterval(async () => {
         try {
-          const response = await fetch(`http://localhost:8080/api/status/${document.id}`);
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          
-          const statusData = await response.json();
+          const statusData = await apiClient.getProcessingStatus(document.id);
           const newStatus = statusData.status.toLowerCase();
-          
+
           setCurrentStatus(newStatus);
           onStatusUpdate(newStatus);
-          
+
           if (newStatus === 'completed') {
-            // Fetch the document content
             try {
-              const contentResponse = await fetch(`http://localhost:8080/api/document/${document.id}`);
-              if (contentResponse.ok) {
-                const content = await contentResponse.json();
-                onProcessingComplete(content);
-              } else {
-                setError(`Failed to fetch document content: ${contentResponse.statusText}`);
-              }
+              const content = await apiClient.getDocumentContent(document.id);
+              onProcessingComplete(content);
             } catch (contentErr) {
               setError(`Failed to fetch document content: ${contentErr instanceof Error ? contentErr.message : 'Unknown error'}`);
             }
@@ -61,7 +51,7 @@ export function ProcessingStatus({
             setError(err instanceof Error ? err.message : 'Failed to check status');
           }
         }
-      }, 2000); // Check every 2 seconds
+      }, 2000);
 
       return () => clearInterval(interval);
     }

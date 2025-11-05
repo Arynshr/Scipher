@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import type { ProcessedContent } from "../lib/api";
 
 interface DocumentViewerProps {
-  document: any;
+  document: ProcessedContent;
   onNewUpload: () => void;
 }
 
