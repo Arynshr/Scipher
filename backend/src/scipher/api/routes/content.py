@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
@@ -105,17 +106,18 @@ async def get_document_sections(
     
     return [SectionSchema.from_orm(section) for section in sections]
 
-@router.get("/document/{doc_id}/text", response_model=TextResponse)
-async def get_document_text(
+@router.get("/document/{doc_id}/markdown")
+async def get_document_markdown(
     doc_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    processor: DocumentProcessor = Depends(get_document_processor)
 ):
     """
-    Retrieve raw extracted text from document
+    Retrieve markdown file directly
     
     - **doc_id**: Document ID
     
-    Returns plain text content
+    Returns markdown file with proper content-type headers
     """
     try:
         doc_uuid = UUID(doc_id)
@@ -134,10 +136,67 @@ async def get_document_text(
             detail=f"Document not ready. Current status: {doc.status}"
         )
     
+    # Load markdown from file
+    markdown_content = processor.load_markdown_file(doc_id)
+    
+    if not markdown_content:
+        raise HTTPException(
+            status_code=404,
+            detail="Markdown file not found"
+        )
+    
+    # Return as file response with proper headers
+    md_file_path = settings.PROCESSED_DATA_DIR / f"{doc_id}.md"
+    return FileResponse(
+        path=str(md_file_path),
+        media_type="text/markdown",
+        filename=f"{doc.original_filename}.md",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'inline; filename="{doc.original_filename}.md"'
+        }
+    )
+
+@router.get("/document/{doc_id}/text", response_model=TextResponse)
+async def get_document_text(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    processor: DocumentProcessor = Depends(get_document_processor)
+):
+    """
+    Retrieve raw extracted text from document
+    
+    - **doc_id**: Document ID
+    
+    Returns plain text content (reads from MD file for efficiency)
+    """
+    try:
+        doc_uuid = UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+    
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
+    
+    if not doc:
+        raise DocumentNotFoundException(doc_id)
+    
+    if doc.status != ProcessingStatus.COMPLETED.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Document not ready. Current status: {doc.status}"
+        )
+    
+    # Load from MD file (more efficient than DB)
+    markdown_content = processor.load_markdown_file(doc_id)
+    
+    # Fallback to DB if MD file doesn't exist (for backward compatibility)
+    text_content = markdown_content if markdown_content else (doc.extracted_text or "No text available")
+    
     return TextResponse(
         id=doc.id,
         filename=doc.original_filename,
-        text=doc.extracted_text or "No text available",
+        text=text_content,
         status=ProcessingStatus(doc.status)
     )
 
@@ -173,7 +232,7 @@ async def delete_document(
     except Exception as e:
         logger.warning(f"Could not delete file {doc.file_path}: {e}")
     
-    # Delete processed data file
+    # Delete processed data files (JSON for backward compatibility, MD for current)
     try:
         processed_file = settings.PROCESSED_DATA_DIR / f"{doc_id}.json"
         if processed_file.exists():
@@ -182,7 +241,7 @@ async def delete_document(
     except Exception as e:
         logger.warning(f"Could not delete processed data for {doc_id}: {e}")
     
-    # Delete markdown file if exists
+    # Delete markdown file
     try:
         md_file = settings.PROCESSED_DATA_DIR / f"{doc_id}.md"
         if md_file.exists():

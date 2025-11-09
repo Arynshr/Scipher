@@ -68,24 +68,26 @@ class DocumentProcessor:
                 if not extracted_data or not extracted_data.get("text"):
                     raise ProcessingException("No text extracted from document")
                 
-                # Save extracted text
-                doc.extracted_text = extracted_data["text"]
+                # Save markdown text to file (not in DB for efficiency)
+                markdown_text = extracted_data["text"]
+                await self.save_markdown_file(doc_id, markdown_text)
+                
+                # Store minimal text in DB (nullable, for fallback/search) - first 1000 chars
+                doc.extracted_text = markdown_text[:1000] if len(markdown_text) > 1000 else markdown_text
                 doc.metadata_json = json.dumps(extracted_data["metadata"])
                 
-                # Parse and save sections
+                # Parse and save sections with only metadata (preview, not full content)
                 sections = self.parse_sections(extracted_data)
-                extracted_data["sections"] = sections  # Add sections to extracted_data
                 for idx, section_data in enumerate(sections):
+                    # Store only preview (first 200 chars) for filtering, not full content
+                    content_preview = section_data["content"][:200] if len(section_data["content"]) > 200 else section_data["content"]
                     section = Section(
                         document_id=doc_id,
                         section_type=section_data["type"],
-                        content=section_data["content"],
+                        content=content_preview,  # Only preview, full content in MD file
                         order=idx
                     )
                     db.add(section)
-                
-                # Save processed data to file
-                await self.save_processed_data(doc_id, extracted_data)
                 
                 # Update document status
                 doc.status = ProcessingStatus.COMPLETED.value
@@ -215,53 +217,53 @@ class DocumentProcessor:
         
         return sections
     
-    async def save_processed_data(self, doc_id: str, data: Dict[str, Any]):
+    async def save_markdown_file(self, doc_id: str, markdown_text: str):
         """
-        Save processed data to JSON file
+        Save processed markdown to file
         
         Args:
             doc_id: Document ID
-            data: Processed data dictionary
+            markdown_text: Markdown content to save
         """
-        output_path = self.processed_dir / f"{doc_id}.json"
+        output_path = self.processed_dir / f"{doc_id}.md"
         
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
-                self._save_json_sync,
+                self._save_markdown_sync,
                 output_path,
-                data
+                markdown_text
             )
-            logger.info(f"Saved processed data to {output_path}")
+            logger.info(f"Saved markdown file to {output_path}")
         except Exception as e:
-            raise ProcessingException(f"Failed to save processed data: {str(e)}")
+            raise ProcessingException(f"Failed to save markdown file: {str(e)}")
     
-    def _save_json_sync(self, output_path: Path, data: Dict[str, Any]):
-        """Synchronous JSON save helper"""
+    def _save_markdown_sync(self, output_path: Path, markdown_text: str):
+        """Synchronous markdown save helper"""
         with output_path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write(markdown_text)
     
-    def load_processed_data(self, doc_id: str) -> Optional[Dict[str, Any]]:
+    def load_markdown_file(self, doc_id: str) -> Optional[str]:
         """
-        Load processed data from file
+        Load markdown file
         
         Args:
             doc_id: Document ID
             
         Returns:
-            Processed data dictionary or None
+            Markdown content or None
         """
-        file_path = self.processed_dir / f"{doc_id}.json"
+        file_path = self.processed_dir / f"{doc_id}.md"
         
         if not file_path.exists():
             return None
         
         try:
             with file_path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+                return f.read()
         except Exception as e:
-            raise ProcessingException(f"Failed to load processed data: {str(e)}")
+            raise ProcessingException(f"Failed to load markdown file: {str(e)}")
 
 # Singleton instance
 document_processor = DocumentProcessor()

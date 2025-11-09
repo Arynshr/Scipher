@@ -105,6 +105,16 @@ export class ApiClient {
     return response.json();
   }
 
+  async getDocumentMarkdown(docId: string): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/api/document/${docId}/markdown`);
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch markdown file');
+    }
+
+    return response.text();
+  }
+
   async deleteDocument(docId: string): Promise<{ message: string; id: string }> {
     const response = await fetch(`${this.baseUrl}/api/document/${docId}`, {
       method: 'DELETE',
