@@ -10,9 +10,11 @@ wheels/
 .venv
 
 # Temp folders
-
 temp/
 uploads/
 processed/
 
 *.pdf
+
+
+*.db
