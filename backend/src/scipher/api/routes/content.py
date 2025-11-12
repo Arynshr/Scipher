@@ -9,9 +9,9 @@ from uuid import UUID
 
 from scipher.dependencies import get_db, get_document_processor
 from scipher.models.database import Document, Section
-from scipher.models.schemas import ProcessedContent, DeleteResponse, SectionSchema, ProcessingStatus
+from scipher.models.schemas import ProcessedContent, DeleteResponse, SectionSchema, ProcessingStatus, DocumentSummaryResponse
 from scipher.core.document_processor import DocumentProcessor
-from scipher.core.exceptions import DocumentNotFoundException
+from scipher.core.exceptions import DocumentNotFoundException, ProcessingException
 from scipher.config import settings
 from pydantic import BaseModel
 from pathlib import Path
@@ -198,6 +198,44 @@ async def get_document_text(
         filename=doc.original_filename,
         text=text_content,
         status=ProcessingStatus(doc.status)
+    )
+
+@router.get("/document/{doc_id}/summary", response_model=DocumentSummaryResponse)
+async def get_document_summary(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    processor: DocumentProcessor = Depends(get_document_processor)
+):
+    """Generate difficulty-based summaries for a processed document."""
+    try:
+        doc_uuid = UUID(doc_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+
+    stmt = select(Document).filter_by(id=str(doc_uuid))
+    doc = (await db.scalars(stmt)).first()
+
+    if not doc:
+        raise DocumentNotFoundException(doc_id)
+
+    if doc.status != ProcessingStatus.COMPLETED.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Document not ready. Current status: {doc.status}"
+        )
+
+    try:
+        summary_result = await processor.summarize_document(doc_id)
+    except ProcessingException as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return DocumentSummaryResponse(
+        id=doc.id,
+        easy=summary_result.easy,
+        intermediate=summary_result.intermediate,
+        technical=summary_result.technical,
+        chunk_count=summary_result.chunk_count,
+        source_characters=summary_result.source_characters,
     )
 
 @router.delete("/document/{doc_id}", response_model=DeleteResponse)

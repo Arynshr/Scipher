@@ -14,6 +14,7 @@ from scipher.models.schemas import ProcessingStatus, JobType
 from scipher.core.exceptions import ProcessingException
 from scipher.config import settings
 import logging
+from scipher.core.summarizer import document_summarizer, DocumentSummarizer, SummaryResult
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class DocumentProcessor:
         self.processed_dir = settings.PROCESSED_DATA_DIR
         self.processed_dir.mkdir(exist_ok=True)
         self.converter = DocumentConverter()
+        self.summarizer: DocumentSummarizer = document_summarizer
     
     async def process_document(self, doc_id: str, file_path: str):
         """
@@ -264,6 +266,20 @@ class DocumentProcessor:
                 return f.read()
         except Exception as e:
             raise ProcessingException(f"Failed to load markdown file: {str(e)}")
+
+    async def summarize_document(self, doc_id: str, summarizer: Optional[DocumentSummarizer] = None) -> SummaryResult:
+        """Generate summaries for a processed document."""
+        markdown_text = self.load_markdown_file(doc_id)
+        if not markdown_text:
+            raise ProcessingException("No processed markdown available for summarization")
+
+        summarizer = summarizer or self.summarizer
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(None, summarizer.summarize, markdown_text)
+        except ValueError as exc:
+            raise ProcessingException(str(exc)) from exc
+        return result
 
 # Singleton instance
 document_processor = DocumentProcessor()

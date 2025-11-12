@@ -37,6 +37,15 @@ export interface ProcessedContent {
   };
 }
 
+export interface DocumentSummaryResponse {
+  id: string;
+  easy: string;
+  intermediate: string;
+  technical: string;
+  chunk_count: number;
+  source_characters: number;
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -113,6 +122,16 @@ export class ApiClient {
     }
 
     return response.text();
+  }
+
+  async getDocumentSummary(docId: string): Promise<DocumentSummaryResponse> {
+    const response = await fetch(`${this.baseUrl}/api/document/${docId}/summary`);
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch document summary');
+    }
+
+    return response.json();
   }
 
   async deleteDocument(docId: string): Promise<{ message: string; id: string }> {

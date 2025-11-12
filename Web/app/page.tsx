@@ -128,7 +128,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="w-full px-6 py-8">
         <div className="flex items-center gap-3 mb-8">
           <button
             onClick={() => {
@@ -150,7 +150,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto">
+        <div className="w-full">
           {!uploadedDocument ? (
             <DocumentUploader onUploadSuccess={handleUploadSuccess} />
           ) : processingStatus === "completed" && documentContent ? (

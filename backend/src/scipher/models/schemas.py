@@ -85,3 +85,11 @@ class DocumentListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+class DocumentSummaryResponse(BaseModel):
+    id: UUID
+    easy: str
+    intermediate: str
+    technical: str
+    chunk_count: int
+    source_characters: int
